@@ -12,6 +12,7 @@ import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.opensearch.action.bulk.BackoffPolicy;
 import org.opensearch.action.get.GetRequest;
 import org.opensearch.action.get.GetResponse;
 import org.opensearch.action.index.IndexRequest;
@@ -24,7 +25,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 @Testcontainers
-public class OpensearchAsyncIndexerTest {
+public class OpensearchAsyncBulkIndexerTest {
 
   @Container
   private static final OpensearchContainer OS_CONTAINER = new OpensearchContainer(
@@ -61,15 +62,21 @@ public class OpensearchAsyncIndexerTest {
   @Test
   public void testOpensearchAsyncIndexer() throws IOException, InterruptedException {
     CountDownLatch countDownLatch = new CountDownLatch(1);
-    OpensearchAsyncIndexer opensearchAsyncIndexer = new OpensearchAsyncIndexer(List.of(countDownLatch),
-        OS_CONTAINER.getUsername(), OS_CONTAINER.getPassword(), HttpHost.create(OS_CONTAINER.getHttpHostAddress()));
-    IndexRequest indexRequest = new IndexRequest("testindex").id("1")
-        .source(Map.of("field1", "foo", "field2", 1));
-    opensearchAsyncIndexer.index(indexRequest);
+    OpensearchAsyncBulkIndexer opensearchAsyncBulkIndexer = new OpensearchAsyncBulkIndexer(1,
+        BackoffPolicy.noBackoff(), List.of(countDownLatch), OS_CONTAINER.getUsername(),
+        OS_CONTAINER.getPassword(), HttpHost.create(OS_CONTAINER.getHttpHostAddress()));
+    opensearchAsyncBulkIndexer.index(new IndexRequest("testindex").id("1")
+        .source(Map.of("field1", "foo", "field2", 1)));
+    opensearchAsyncBulkIndexer.index(new IndexRequest("testindex").id("2")
+        .source(Map.of("field1", "bar", "field2", 2)));
+    opensearchAsyncBulkIndexer.flush();
     countDownLatch.await();
 
-    GetResponse getResponse = client.get(new GetRequest("testindex", "1"), RequestOptions.DEFAULT);
-    assertEquals("foo", getResponse.getSource().get("field1"));
-    assertEquals(1, getResponse.getSource().get("field2"));
+    GetResponse getResponse1 = client.get(new GetRequest("testindex", "1"), RequestOptions.DEFAULT);
+    assertEquals("foo", getResponse1.getSource().get("field1"));
+    assertEquals(1, getResponse1.getSource().get("field2"));
+    GetResponse getResponse2 = client.get(new GetRequest("testindex", "2"), RequestOptions.DEFAULT);
+    assertEquals("bar", getResponse2.getSource().get("field1"));
+    assertEquals(2, getResponse2.getSource().get("field2"));
   }
 }
